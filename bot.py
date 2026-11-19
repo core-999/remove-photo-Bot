@@ -1,7 +1,15 @@
+import asyncio
 import logging
 import os
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.error import RetryAfter
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 
 logging.basicConfig(
@@ -27,7 +35,7 @@ except ValueError:
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
-        await update.message.reply_text("remove phone&video  bot")
+        await update.message.reply_text("remove phone&video&stk  bot")
 
 
 async def handle_media_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -41,14 +49,29 @@ async def handle_media_messages(update: Update, context: ContextTypes.DEFAULT_TY
 
         if user:
             
-            
             if user.id != OWNER_ID:
-                if message.photo or message.video or message.animation:
+                if (
+                    message.photo
+                    or message.video
+                    or message.animation
+                    or message.sticker
+                ):
                     try:
                         await message.delete()
                         logger.info(
-                            f"Deleted media from user {user.id} ({user.full_name}) in group {message.chat.title}"
+                            f"Deleted media/sticker from user {user.id} ({user.full_name}) in group {message.chat.title}"
                         )
+                    except RetryAfter as e:
+                        
+                        wait_time = e.retry_after + 0.5
+                        logger.warning(
+                            f"Flood control hit. Waiting {wait_time}s before retrying delete."
+                        )
+                        await asyncio.sleep(wait_time)
+                        try:
+                            await message.delete()
+                        except Exception as retry_err:
+                            logger.error(f"Retry delete failed: {retry_err}")
                     except Exception as e:
                         logger.error(
                             f"Failed to delete message: {e}. Make sure the bot has full admin rights."
@@ -60,10 +83,17 @@ def main():
 
     application.add_handler(CommandHandler("start", start_command))
 
-    media_filter = filters.PHOTO | filters.VIDEO | filters.ANIMATION
+    media_filter = (
+        filters.PHOTO
+        | filters.VIDEO
+        | filters.ANIMATION
+        | filters.Sticker.ALL
+    )
     application.add_handler(MessageHandler(media_filter, handle_media_messages))
 
-    print("Bot is running and ready to delete media from non-owners (including admins)...")
+    print(
+        "Bot is running and ready to delete media & stickers from non-owners (including admins)..."
+    )
     application.run_polling()
 
 
